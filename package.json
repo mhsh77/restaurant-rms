@@ -1,0 +1,19 @@
+{
+  "name": "restaurant-rms",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Restaurant Management System — waiter POS, kitchen & bar displays, menu, tables, receipts, reports, audit log",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix client && npm run db:reset",
+    "db:migrate": "npm run migrate --prefix server",
+    "db:seed": "npm run seed --prefix server",
+    "db:reset": "npm run reset --prefix server",
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "test": "npm test --prefix server"
+  }
+}

@@ -1,0 +1,20 @@
+node_modules/
+
+# runtime data — never commit a live database or its secret
+server/data/
+server/uploads/
+client/dist/
+
+# video pipeline outputs: frames, voice clips and renders (rebuildable, ~2 GB)
+video/out/
+video/.data/
+video/audio/
+video/final/
+video/drafts/
+video/tts-*.json
+video/*.log
+
+*.log
+.DS_Store
+video/final.zip
+*.zip

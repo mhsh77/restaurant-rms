@@ -1,0 +1,28 @@
+{
+  "name": "rms-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/index.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch-path=src src/index.js",
+    "migrate": "node --no-warnings=ExperimentalWarning src/db/migrate.js",
+    "seed": "node --no-warnings=ExperimentalWarning src/db/seed.js",
+    "reset": "node --no-warnings=ExperimentalWarning src/db/seed.js --reset --history",
+    "init": "node --no-warnings=ExperimentalWarning src/db/seed.js --minimal",
+    "test": "node --no-warnings=ExperimentalWarning --test --test-concurrency=1 test/*.test.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "socket.io": "^4.8.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

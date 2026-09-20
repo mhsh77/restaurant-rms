@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<style>
+/*FONT*/
+:root {
+  --bg: #f5f4f1; --surface: #fff; --ink: #1c1917; --ink-2: #57534e; --ink-3: #8a857d; --line: #e4e2dc;
+  --primary: #c2410c; --primary-soft: #ffedd5;
+  --pending: #475569; --pending-bg: #eef2f6; --preparing: #1d4ed8; --preparing-bg: #dbeafe;
+  --ready: #15803d; --ready-bg: #dcfce7; --delivered: #57534e; --delivered-bg: #efeeeb;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 100%; height: 100%; background: var(--bg); color: var(--ink); font-family: Vazirmatn, system-ui, sans-serif; overflow: hidden; }
+.slide { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 60px 80px; }
+.slide.on { display: flex; }
+.kicker { color: var(--primary); font-weight: 800; font-size: 26px; letter-spacing: .02em; margin-bottom: 10px; }
+h1 { font-size: 64px; font-weight: 900; line-height: 1.25; text-align: center; }
+h2 { font-size: 44px; font-weight: 850; margin-bottom: 44px; text-align: center; }
+.sub { font-size: 28px; color: var(--ink-2); margin-top: 18px; text-align: center; line-height: 1.7; }
+.fade { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+.fade.in { opacity: 1; transform: none; }
+
+/* title card */
+.title-card .emoji { font-size: 110px; margin-bottom: 18px; }
+.title-card .roles { display: flex; gap: 18px; margin-top: 44px; }
+.pill { background: var(--surface); border: 2px solid var(--line); border-radius: 999px; padding: 10px 26px; font-size: 26px; font-weight: 700; }
+
+/* road */
+.road { position: relative; width: 1440px; height: 300px; }
+.road .track { position: absolute; top: 56px; right: 100px; left: 100px; height: 12px; border-radius: 6px; background: var(--line); }
+.road .fill { position: absolute; top: 56px; right: 100px; height: 12px; border-radius: 6px; background: var(--primary); width: 0; transition: width 1.1s cubic-bezier(.4,.1,.2,1); }
+.stops { position: absolute; inset: 0; display: flex; justify-content: space-between; }
+.stop { width: 200px; display: flex; flex-direction: column; align-items: center; text-align: center; opacity: .35; transition: opacity .5s, transform .5s; }
+.stop.seen { opacity: 1; }
+.stop .dot { width: 124px; height: 124px; border-radius: 50%; background: var(--surface); border: 5px solid var(--line); display: grid; place-items: center; font-size: 58px; margin-bottom: 18px; transition: border-color .4s, background .4s, transform .4s; position: relative; z-index: 1; }
+.stop.seen .dot { border-color: var(--primary); }
+.stop.active .dot { background: var(--primary-soft); transform: scale(1.14); box-shadow: 0 0 0 12px rgba(194,65,12,.12); }
+.stop .num { position: absolute; top: -6px; inset-inline-start: -6px; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 22px; font-weight: 800; display: grid; place-items: center; }
+.stop .t { font-size: 27px; font-weight: 800; line-height: 1.35; }
+.stop .w { font-size: 21px; color: var(--ink-3); margin-top: 6px; font-weight: 600; }
+
+/* split */
+.split { display: grid; grid-template-columns: 1fr 240px 1fr; align-items: center; width: 1400px; }
+.card { background: var(--surface); border: 2px solid var(--line); border-radius: 22px; padding: 28px 30px; box-shadow: 0 10px 30px rgba(28,25,23,.08); }
+.card h3 { font-size: 30px; font-weight: 850; margin-bottom: 16px; display: flex; gap: 12px; align-items: center; }
+.card li { list-style: none; font-size: 26px; padding: 8px 0; border-top: 1px dashed var(--line); display: flex; justify-content: space-between; gap: 20px; transition: background .4s, color .4s; }
+.card li:first-child { border-top: 0; }
+.card li b { font-weight: 800; }
+.card li.food.hl { color: #9a3412; }
+.card li.drink.hl { color: #1d4ed8; }
+.arrow { font-size: 64px; text-align: center; color: var(--ink-3); }
+.dest { display: flex; flex-direction: column; gap: 26px; grid-column: 3; }
+.dest .card { border-width: 3px; }
+.dest .kitchen { border-color: #fdba74; }
+.dest .bar { border-color: #93c5fd; }
+.arrows { display: flex; flex-direction: column; gap: 120px; align-items: center; font-size: 58px; }
+.arrows span:first-child { color: #ea580c; }
+.arrows span:last-child { color: #2563eb; }
+
+/* status chain */
+.chain { display: flex; align-items: center; gap: 22px; }
+.st { border-radius: 20px; padding: 26px 34px; font-size: 34px; font-weight: 850; border: 3px solid transparent; opacity: .3; transform: scale(.94); transition: all .5s; min-width: 230px; text-align: center; }
+.st small { display: block; font-size: 21px; font-weight: 600; margin-top: 6px; opacity: .85; }
+.st.on { opacity: 1; transform: none; }
+.st.cur { transform: scale(1.08); box-shadow: 0 16px 36px rgba(0,0,0,.14); }
+.st.pending { background: var(--pending-bg); color: var(--pending); border-color: #cbd5e1; }
+.st.preparing { background: var(--preparing-bg); color: var(--preparing); border-color: #93c5fd; }
+.st.ready { background: var(--ready-bg); color: var(--ready); border-color: #86efac; }
+.st.delivered { background: var(--delivered-bg); color: var(--delivered); border-color: #d6d3d1; }
+.chev { font-size: 44px; color: var(--ink-3); opacity: .3; transition: opacity .5s; }
+.chev.on { opacity: 1; }
+.chain-note { margin-top: 50px; font-size: 28px; color: var(--ink-2); }
+
+/* bullet list */
+.list { display: flex; flex-direction: column; gap: 20px; width: 1250px; }
+.list .row { display: flex; align-items: center; gap: 24px; background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 20px 28px; font-size: 30px; font-weight: 650; }
+.list .row .i { font-size: 40px; width: 56px; text-align: center; }
+.list .row .n { background: var(--primary); color: #fff; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 23px; font-weight: 800; flex: none; }
+</style>
+</head>
+<body>
+
+<section class="slide title-card" id="title">
+  <div class="emoji fade" id="title-emoji"></div>
+  <div class="kicker fade" id="title-kicker"></div>
+  <h1 class="fade" id="title-h"></h1>
+  <p class="sub fade" id="title-sub"></p>
+  <div class="roles fade" id="title-roles"></div>
+</section>
+
+<section class="slide" id="road">
+  <h2 class="fade" id="road-h">مسیر یک سفارش</h2>
+  <div class="road">
+    <div class="track"></div>
+    <div class="fill" id="road-fill"></div>
+    <div class="stops" id="road-stops"></div>
+  </div>
+</section>
+
+<section class="slide" id="split">
+  <h2 class="fade in">سیستم سفارش را خودش تقسیم می‌کند</h2>
+  <div class="split">
+    <div class="card fade" id="split-order" style="grid-column:1">
+      <h3>📝 سفارش میز ۵</h3>
+      <ul>
+        <li class="food"><span>پیتزا مارگاریتا</span><b>۲×</b></li>
+        <li class="food"><span>همبرگر کلاسیک</span><b>۱×</b></li>
+        <li class="drink"><span>نوشابه</span><b>۲×</b></li>
+        <li class="drink"><span>کاپوچینو</span><b>۱×</b></li>
+      </ul>
+    </div>
+    <div class="arrows fade" id="split-arrows" style="grid-column:2"><span>⬅</span><span>⬅</span></div>
+    <div class="dest">
+      <div class="card kitchen fade" id="split-kitchen">
+        <h3>👨‍🍳 آشپزخانه</h3>
+        <ul><li><span>پیتزا مارگاریتا</span><b>۲×</b></li><li><span>همبرگر کلاسیک</span><b>۱×</b></li></ul>
+      </div>
+      <div class="card bar fade" id="split-bar">
+        <h3>🍹 بار</h3>
+        <ul><li><span>نوشابه</span><b>۲×</b></li><li><span>کاپوچینو</span><b>۱×</b></li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="status">
+  <h2 class="fade in">وضعیت هر آیتم</h2>
+  <div class="chain">
+    <div class="st pending" data-i="1">جدید<small>ثبت شد</small></div>
+    <div class="chev" data-i="2">⬅</div>
+    <div class="st preparing" data-i="2">در حال آماده‌سازی<small>آشپز / بارمن شروع کرد</small></div>
+    <div class="chev" data-i="3">⬅</div>
+    <div class="st ready" data-i="3">آماده<small>زنگ گارسون</small></div>
+    <div class="chev" data-i="4">⬅</div>
+    <div class="st delivered" data-i="4">تحویل‌شده<small>سر میز رسید</small></div>
+  </div>
+  <p class="chain-note fade" id="status-note">همه، همان لحظه، همین وضعیت را می‌بینند.</p>
+</section>
+
+<section class="slide" id="list">
+  <h2 class="fade" id="list-h"></h2>
+  <div class="list" id="list-rows"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+function only(id) {
+  document.querySelectorAll('.slide').forEach((s) => s.classList.toggle('on', s.id === id));
+}
+const faNum = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
+
+window.showTitle = async ({ emoji = '', kicker = '', title, sub = '', roles = [] }) => {
+  only('title');
+  for (const id of ['title-emoji', 'title-kicker', 'title-h', 'title-sub', 'title-roles']) $(id).classList.remove('in');
+  $('title-emoji').textContent = emoji;
+  $('title-kicker').textContent = kicker;
+  $('title-h').textContent = title;
+  $('title-sub').textContent = sub;
+  $('title-roles').innerHTML = roles.map((r) => `<span class="pill">${r}</span>`).join('');
+  for (const id of ['title-emoji', 'title-kicker', 'title-h', 'title-sub']) { await wait(180); $(id).classList.add('in'); }
+  if (roles.length) { await wait(400); $('title-roles').classList.add('in'); }
+};
+
+let roadBuilt = false;
+window.showRoad = async (stops, { upTo = 0, reveal = false, title } = {}) => {
+  only('road');
+  if (title) $('road-h').textContent = title;
+  $('road-h').classList.add('in');
+  const box = $('road-stops');
+  if (!roadBuilt) {
+    box.innerHTML = stops.map((s, i) => `<div class="stop" data-i="${i + 1}"><div class="dot"><span class="num">${faNum(i + 1)}</span>${s.icon}</div><div class="t">${s.title}</div><div class="w">${s.who}</div></div>`).join('');
+    roadBuilt = true;
+  }
+  const els = [...box.children];
+  const set = (n) => {
+    els.forEach((el, i) => { el.classList.toggle('seen', i < n || n === -1); el.classList.toggle('active', i === n - 1); });
+    const frac = n <= 1 ? 0 : (n === -1 ? 1 : (n - 1) / (els.length - 1));
+    $('road-fill').style.width = `calc((100% - 200px) * ${frac})`;
+  };
+  if (reveal) {
+    for (let n = 1; n <= els.length; n++) { set(n); await wait(750); }
+    els.forEach((el) => el.classList.remove('active'));
+  } else set(upTo);
+};
+
+window.showSplit = async () => {
+  only('split');
+  for (const id of ['split-order', 'split-arrows', 'split-kitchen', 'split-bar']) $(id).classList.remove('in');
+  document.querySelectorAll('#split li').forEach((li) => li.classList.remove('hl'));
+  await wait(200); $('split-order').classList.add('in');
+  await wait(1600);
+  document.querySelectorAll('#split li.food').forEach((li) => li.classList.add('hl'));
+  $('split-arrows').classList.add('in');
+  await wait(700); $('split-kitchen').classList.add('in');
+  await wait(1100);
+  document.querySelectorAll('#split li.drink').forEach((li) => li.classList.add('hl'));
+  await wait(400); $('split-bar').classList.add('in');
+};
+
+window.showStatus = async ({ stepMs = 1300 } = {}) => {
+  only('status');
+  $('status-note').classList.remove('in');
+  const all = [...document.querySelectorAll('#status [data-i]')];
+  all.forEach((el) => el.classList.remove('on', 'cur'));
+  for (let i = 1; i <= 4; i++) {
+    all.filter((el) => Number(el.dataset.i) === i).forEach((el) => el.classList.add('on'));
+    document.querySelectorAll('#status .st').forEach((el) => el.classList.toggle('cur', Number(el.dataset.i) === i));
+    await wait(stepMs);
+  }
+  document.querySelectorAll('#status .st').forEach((el) => el.classList.remove('cur'));
+  $('status-note').classList.add('in');
+};
+
+window.showList = async (title, rows, { stepMs = 900 } = {}) => {
+  only('list');
+  $('list-h').textContent = title;
+  $('list-h').classList.add('in');
+  const box = $('list-rows');
+  box.innerHTML = rows.map((r, i) => `<div class="row fade">${r.icon ? `<span class="i">${r.icon}</span>` : `<span class="n">${faNum(i + 1)}</span>`}<span>${r.text}</span></div>`).join('');
+  for (const el of box.children) { await wait(stepMs); el.classList.add('in'); }
+};
+</script>
+</body>
+</html>

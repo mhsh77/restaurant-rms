@@ -1,0 +1,13 @@
+{
+  "name": "rms-videos",
+  "private": true,
+  "type": "module",
+  "description": "Narrated walkthrough videos of the RMS: capture (Playwright) + per-paragraph audio assembly (ffmpeg)",
+  "scripts": {
+    "capture": "node capture.mjs",
+    "build": "node assemble.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
