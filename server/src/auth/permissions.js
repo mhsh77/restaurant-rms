@@ -16,6 +16,7 @@ export const PERMISSIONS = Object.freeze({
   ORDER_VIEW: 'order:view',
   STATION_WORK: 'station:work',
   CASHIER_WORK: 'cashier:work',
+  COUNTER_ORDER: 'order:counter',
   MENU_MANAGE: 'menu:manage',
   TABLES_MANAGE: 'tables:manage',
   STAFF_MANAGE: 'staff:manage',
@@ -31,7 +32,7 @@ const MATRIX = {
   [ROLES.WAITER]: [P.FLOOR_VIEW, P.ORDER_WRITE, P.ORDER_VIEW],
   [ROLES.KITCHEN]: [P.STATION_WORK],
   [ROLES.BAR]: [P.STATION_WORK],
-  [ROLES.CASHIER]: [P.ORDER_VIEW, P.CASHIER_WORK],
+  [ROLES.CASHIER]: [P.ORDER_VIEW, P.CASHIER_WORK, P.COUNTER_ORDER],
 };
 
 export function roleHas(roleCode, permission) {

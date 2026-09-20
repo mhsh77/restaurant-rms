@@ -708,3 +708,52 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   .kds-cards { grid-template-columns: 1fr; }
   .jdate { flex-wrap: wrap; }
 }
+
+/* ───────────── Counter ordering (order + pay at the cashier) ───────────── */
+
+.segmented-page { display: flex; margin-bottom: 4px; }
+.segmented-page button { flex: 1; min-height: 46px; }
+
+.mode-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.mode-options .field-hint { margin-top: 4px; }
+.mode-badge { font-size: 0.72rem; margin-inline-start: 6px; }
+
+.counter-order { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr); gap: 16px; align-items: start; }
+.counter-order .menu-pane { max-height: calc(100dvh - var(--topbar-h) - 150px); }
+.counter-ticket {
+  display: flex; flex-direction: column; gap: 12px; padding: 16px;
+  position: sticky; top: calc(var(--topbar-h) + 12px); max-height: calc(100dvh - var(--topbar-h) - 24px);
+}
+.counter-scroll { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; flex: 1; }
+.counter-foot { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.counter-foot .ticket-total { display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; }
+.counter-foot .ticket-total strong { font-size: 1.5rem; }
+.counter-foot .ticket-total span { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.counter-foot .button-row { justify-content: space-between; }
+.counter-done { gap: 14px; }
+.counter-done-amounts { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.counter-done-amounts strong { font-size: 1.6rem; }
+
+.counter-queue { display: flex; flex-direction: column; gap: 10px; }
+.counter-queue h3 { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--ink-2); }
+.queue-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.queue-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius);
+}
+.queue-row.is-ready { border-color: var(--ready); background: var(--ready-bg); }
+.queue-main { display: flex; flex-direction: column; gap: 3px; text-align: start; flex: 1; min-width: 0; background: transparent; border: 0; padding: 0; }
+.queue-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.queue-top b { font-size: 1.05rem; }
+.queue-actions { display: flex; flex-direction: column; gap: 6px; flex: none; }
+
+.kds-mode {
+  display: inline-block; margin-inline-start: 8px; padding: 1px 10px; border-radius: 999px;
+  background: #fde68a; color: #7c2d12; font-size: 0.8rem; font-weight: 800; vertical-align: middle;
+}
+
+@media (max-width: 900px) {
+  .counter-order { grid-template-columns: 1fr; }
+  .counter-ticket { position: static; max-height: none; }
+  .counter-order .menu-pane { max-height: 60vh; }
+}

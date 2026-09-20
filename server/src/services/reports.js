@@ -8,7 +8,7 @@ import { getRestaurant } from './restaurant.js';
 import { addDays, daysBetween, resolveRange, businessDayStartUtc, toJalaliString } from './time.js';
 import { toMajor } from './money.js';
 import { latinDigits } from '../http/validate.js';
-import { ORDER_STATUS_FA, PAYMENT_METHOD_FA } from './labels.js';
+import { ORDER_STATUS_FA, PAYMENT_METHOD_FA, SERVICE_MODE_FA, placeLabel } from './labels.js';
 
 const SECONDS = (a, b) => `((julianday(${a}) - julianday(${b})) * 86400.0)`;
 
@@ -281,6 +281,26 @@ function hourly(restaurant, from, to) {
   return buckets;
 }
 
+/** How much of the business came through each ordering workflow. */
+function byServiceMode(rid, from, to) {
+  const rows = q.all(
+    `SELECT service_mode,
+            COUNT(*) AS orders,
+            COALESCE(SUM(subtotal), 0) AS sales,
+            COALESCE(SUM(guest_count), 0) AS guests
+       FROM orders
+      WHERE restaurant_id = ? AND business_date BETWEEN ? AND ? AND lifecycle = 'COMPLETED'
+      GROUP BY service_mode`,
+    rid,
+    from,
+    to,
+  );
+  return ['TABLE', 'COUNTER_TABLE', 'COUNTER_PICKUP'].map((mode) => {
+    const r = rows.find((x) => x.service_mode === mode);
+    return { mode, label: SERVICE_MODE_FA[mode], orders: r?.orders ?? 0, sales: r?.sales ?? 0, guests: r?.guests ?? 0 };
+  });
+}
+
 export function summary(actor, rangeInput) {
   const restaurant = getRestaurant(actor.restaurantId);
   const range = resolveRange(restaurant, rangeInput);
@@ -296,6 +316,7 @@ export function summary(actor, rangeInput) {
     stations: stations(rid, range.from, range.to),
     payments: paymentTotals(rid, range.from, range.to),
     unpaid: unpaidCompleted(rid, range.from, range.to),
+    serviceModes: byServiceMode(rid, range.from, range.to),
   };
 }
 
@@ -375,18 +396,18 @@ export function exportCsv(actor, type, rangeInput) {
     case 'orders': {
       const fmt = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: restaurant.timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
       const local = (iso) => (iso ? fmt.format(new Date(iso)) : '');
-      rows = [['شماره سفارش', 'تاریخ کاری (شمسی)', 'زمان ثبت', 'زمان تکمیل', 'میز', 'گارسون', 'مهمان', 'وضعیت', 'تعداد اقلام', `مبلغ (${cur})`]];
+      rows = [['شماره سفارش', 'تاریخ کاری (شمسی)', 'زمان ثبت', 'زمان تکمیل', 'روش سفارش', 'میز', 'گارسون', 'مهمان', 'وضعیت', 'تعداد اقلام', `مبلغ (${cur})`]];
       const list = q.all(
-        `SELECT o.order_number, o.business_date, o.opened_at, o.completed_at, t.name AS table_name, w.name AS waiter_name, o.guest_count, o.status, o.subtotal,
+        `SELECT o.order_number, o.business_date, o.opened_at, o.completed_at, o.service_mode, o.customer_name, t.name AS table_name, w.name AS waiter_name, o.guest_count, o.status, o.subtotal,
                 (SELECT COALESCE(SUM(quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.status != 'CANCELLED') AS item_count
-           FROM orders o JOIN dining_tables t ON t.id = o.table_id JOIN users w ON w.id = o.waiter_id
+           FROM orders o LEFT JOIN dining_tables t ON t.id = o.table_id JOIN users w ON w.id = o.waiter_id
           WHERE o.restaurant_id = ? AND o.business_date BETWEEN ? AND ? ORDER BY o.order_number`,
         rid,
         from,
         to,
       );
       for (const o of list) {
-        rows.push([o.order_number, toJalaliString(o.business_date), local(o.opened_at), local(o.completed_at), o.table_name, o.waiter_name, o.guest_count, ORDER_STATUS_FA[o.status] ?? o.status, o.item_count, money(o.subtotal)]);
+        rows.push([o.order_number, toJalaliString(o.business_date), local(o.opened_at), local(o.completed_at), SERVICE_MODE_FA[o.service_mode] ?? o.service_mode, placeLabel(o), o.waiter_name, o.guest_count, ORDER_STATUS_FA[o.status] ?? o.status, o.item_count, money(o.subtotal)]);
       }
       break;
     }
@@ -394,10 +415,10 @@ export function exportCsv(actor, type, rangeInput) {
       const fmt = new Intl.DateTimeFormat('fa-IR-u-nu-latn', { timeZone: restaurant.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
       rows = [['تاریخ کاری (شمسی)', 'ساعت', 'شماره سفارش', 'میز', 'روش پرداخت', `مبلغ (${cur})`, `دریافتی نقدی (${cur})`, `باقی (${cur})`, 'شماره پیگیری', 'ثبت‌کننده', 'وضعیت', 'دلیل ابطال']];
       const list = q.all(
-        `SELECT p.*, o.order_number, t.name AS table_name, u.name AS user_name
+        `SELECT p.*, o.order_number, o.service_mode, t.name AS table_name, u.name AS user_name
            FROM payments p
            JOIN orders o ON o.id = p.order_id
-           JOIN dining_tables t ON t.id = o.table_id
+           LEFT JOIN dining_tables t ON t.id = o.table_id
            JOIN users u ON u.id = p.created_by
           WHERE p.restaurant_id = ? AND p.business_date BETWEEN ? AND ?
           ORDER BY p.created_at, p.id`,
@@ -411,7 +432,7 @@ export function exportCsv(actor, type, rangeInput) {
           toJalaliString(p.business_date),
           fmt.format(new Date(p.created_at)),
           p.order_number,
-          p.table_name,
+          placeLabel(p),
           PAYMENT_METHOD_FA[p.method],
           money(p.amount),
           hasCash ? money(p.received_amount) : '',

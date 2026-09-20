@@ -58,7 +58,9 @@ test('cashier role: access is limited to the register and order viewing', async 
   assert.equal((await neda.get('/api/cashier/summary')).status, 200);
   assert.equal((await neda.get('/api/orders')).status, 200);
   assert.equal((await neda.post('/api/orders', { tableId: 1, guestCount: 2 })).status, 403);
-  assert.equal((await neda.get('/api/tables')).status, 403);
+  // reads the floor to pick a table for a counter order, but cannot open or manage tables
+  assert.equal((await neda.get('/api/tables')).status, 200);
+  assert.equal((await neda.post('/api/tables', { name: 'میز ۱۱', capacity: 2 })).status, 403);
   assert.equal((await neda.get('/api/reports/dashboard')).status, 403);
   assert.equal((await neda.get('/api/users')).status, 403);
 

@@ -148,7 +148,10 @@ export default function StationDisplay() {
                       <article key={t.batchId} className={`kds-card ${urgency}`}>
                         <header className="kds-card-head">
                           <div>
-                            <div className="kds-table">{t.tableName}</div>
+                            <div className="kds-table">
+                              {t.tableName}
+                              {t.serviceMode !== 'TABLE' && <span className="kds-mode">{t.customerName || 'پیشخوان'}</span>}
+                            </div>
                             <div className="kds-order">
                               سفارش {orderNo(t.orderNumber)}
                               {t.batchNo > 1 && <span className="kds-round">مرحله {faDigits(t.batchNo)}</span>}

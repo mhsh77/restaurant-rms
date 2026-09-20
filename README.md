@@ -112,9 +112,10 @@ When serving behind nginx, proxy WebSocket upgrades for `/socket.io/`.
 | Area | Where |
 |---|---|
 | Authentication (scrypt hashes, httpOnly JWT cookie, login throttling, instant revocation) | `server/src/auth`, `server/src/http/auth.js` |
-| Role-based access (Manager, Waiter, Kitchen, Bar) enforced in routes **and** services | `server/src/auth/permissions.js` |
+| Role-based access (Manager, Waiter, Kitchen, Bar, Cashier) enforced in routes **and** services | `server/src/auth/permissions.js` |
 | Floor plan with derived table status (Available, Waiting for order, Ordering, Preparing, Ready, Occupied, Completed) | `client/src/pages/Floor.jsx` |
 | Waiter POS: guests, menu search & categories, quantities, notes, multi-round orders, deliver, receipt, complete, cancel | `client/src/pages/OrderScreen.jsx` |
+| Three ordering workflows the manager switches on: at the table (waiter), ordered **and paid** at the counter then served at a table, and ordered and paid at the counter for takeaway | `client/src/components/CounterOrder.jsx`, `server/src/services/counter.js` |
 | Automatic Kitchen / Bar split — one order, per-station tickets | `server/src/services/orders.js` (`submitBatch`), `stationTickets.js` |
 | Kitchen & Bar displays: New / Preparing / Ready lanes, big START / READY buttons, per-item taps, undo, timers with warn/late colours, new-ticket chime | `client/src/pages/StationDisplay.jsx` |
 | Independent item statuses + derived order status | `server/src/services/statusRules.js` |
@@ -131,6 +132,23 @@ When serving behind nginx, proxy WebSocket upgrades for `/socket.io/`.
 | Audit log with filters | `client/src/pages/manager/AuditLog.jsx` |
 
 ### Behaviour worth knowing
+
+**Ordering workflows.** Settings → «روش‌های سفارش‌گیری» turns each of the three on or off
+(at least one must stay on, and table service can only be switched off once no table order is
+still open):
+
+- **سر میز** — the guest sits, the waiter takes the order, the bill is paid at the end.
+- **پیشخوان، سرو سر میز** — the guest orders and pays at the cashier, then sits down; the
+  cashier can pick a free table right away or leave it empty, in which case the order shows on
+  the floor under "counter orders without a table" until a waiter attaches one. The waiter then
+  delivers and completes it as usual — it is already paid.
+- **پیشخوان، تحویل بیرون‌بر** — the guest orders, pays and waits at the counter. No table and no
+  waiter: when the stations finish, the order turns green in the cashier's counter queue and
+  **تحویل مشتری** hands it over and closes it in one step.
+
+A counter order is written in a single transaction — order, items and payment together — so the
+kitchen never receives an unpaid counter order and a double tap cannot order twice. The payment
+must cover the whole order; anything the guest adds later is billed the normal way.
 
 - **Order numbers** are sequential per restaurant (#1001, #1002 …) and searchable.
 - **Adding more food later** appends a new *round* to the same order; the kitchen sees it

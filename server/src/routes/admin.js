@@ -34,6 +34,9 @@ const settingsSchema = z
     kdsWarnMinutes: z.number().int().min(1).max(240),
     kdsLateMinutes: z.number().int().min(2).max(480),
     requirePaymentToComplete: z.boolean(),
+    modeTableService: z.boolean(),
+    modeCounterTable: z.boolean(),
+    modeCounterPickup: z.boolean(),
   })
   .partial();
 

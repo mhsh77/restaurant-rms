@@ -58,6 +58,9 @@ Roles are rows in `roles`; the permission matrix lives in code
 |----------------------------------|:-------:|:------:|:-------:|:---:|:-------:|
 | View floor / tables              | ✔ | ✔ |   |   |   |
 | Open order, add items, deliver   | ✔ | ✔ |   |   |   |
+| Take a counter order (order + payment in one step) | ✔ |   |   |   | ✔ |
+| Attach a table to a counter order | ✔ | ✔ |   |   | ✔ |
+| Hand a pickup order to the guest | ✔ | ✔ |   |   | ✔ |
 | Cancel a PENDING item            | ✔ | ✔ |   |   |   |
 | Cancel a PREPARING/READY item    | ✔ |   |   |   |   |
 | Complete order                   | ✔ | ✔ |   |   | ✔ (pay-and-complete) |
@@ -112,6 +115,10 @@ restaurants ─┬─< users >── roles
 | kds_warn_minutes / kds_late_minutes | INTEGER | ticket colour thresholds |
 | order_seq | INTEGER | last issued order number (atomic counter) |
 
+The three ordering workflows are switched on per restaurant by
+`mode_table_service`, `mode_counter_table`, `mode_counter_pickup` (at least one must stay on;
+table service can only be switched off when no table order is still open).
+
 ### roles
 `id, code UNIQUE (MANAGER|WAITER|KITCHEN|BAR), name, description`
 
@@ -148,12 +155,16 @@ out). Deleting an item that was ever ordered is a soft delete.
 |---|---|
 | id, restaurant_id | |
 | order_number | `UNIQUE(restaurant_id, order_number)`; allocated from `restaurants.order_seq` inside the creating transaction → #1001, #1002, … |
-| table_id FK, waiter_id FK | waiter = who opened the order |
+| table_id FK | **nullable**: a pickup order has no table, and a counter order may get one later. The partial unique index still guarantees one live order per table, and SQLite treats NULLs as distinct, so any number of pickup orders can be open |
+| waiter_id FK | who opened the order — the waiter, or the cashier for a counter order |
 | guest_count, note | |
 | lifecycle | `ACTIVE`, `COMPLETED`, `CANCELLED` — set by explicit user actions |
 | status | derived and stored (for filtering): `OPEN, IN_PROGRESS, PARTIALLY_READY, READY, DELIVERED, COMPLETED, CANCELLED` |
 | business_date | local date for reporting |
 | opened_at, completed_at, cancelled_at, cancel_reason | |
+| service_mode | `TABLE` (waiter takes it at the table), `COUNTER_TABLE` (ordered and paid at the counter, eaten at a table), `COUNTER_PICKUP` (ordered and paid at the counter, taken away) |
+| customer_name | optional, for calling a counter guest |
+| client_request_id | set for counter orders; `UNIQUE(restaurant_id, client_request_id)` makes "take the money and send it" safe to retry |
 | released_at | table freed. **Partial unique index `UNIQUE(table_id) WHERE released_at IS NULL`** guarantees one live order per table even if two waiters tap the same table at the same moment |
 | ordering_user_id, ordering_until | "someone is composing an order on this table" presence, expires by time |
 | subtotal | cached sum of non-cancelled items, recomputed in the same transaction as any item change |
@@ -333,6 +344,10 @@ Base path `/api`. JSON in/out. Auth by httpOnly `SameSite=Strict` cookie. Errors
 | GET | /cashier/summary | today's takings by method, change given, voids, what is still due |
 | POST | /orders/:id/payments | `{clientRequestId, method, amount, receivedAmount?, reference?, completeOrder?}` |
 | POST | /payments/:id/void | `{reason}` |
+| POST | /counter-orders | `{clientRequestId, mode, tableId?, customerName?, items[], payment{method, amount, receivedAmount?, reference?}}` — creates the order, its items and the payment in **one transaction**; `payment.amount` must equal the order total |
+| GET | /counter/queue | counter orders still cooking, waiting to be handed over, or still without a table |
+| POST | /orders/:id/table | `{tableId}` (or `null`) — attach a table to a counter order after the guest sits down |
+| POST | /orders/:id/hand-over | give a pickup order to the guest; delivers everything ready and closes the order |
 
 `GET /orders/:id` also returns `paidAmount, remaining, paymentStatus, payments[],
 completeBlockedReason`; `GET /orders` accepts `paymentStatus`; the receipt includes payments.
@@ -390,6 +405,23 @@ thresholds.
 **Waiter — serving**
 When an item turns READY the waiter's screen plays a chime and the bell shows
 *Table 5 · 2 items ready*. Tap → order → **Deliver** per item or **Deliver all ready**.
+
+**Counter — guest orders and pays first**
+Cashier → *New counter order* → pick items → choose *At a table* or *Takeaway* → for a table
+order pick a free table (or leave it empty) → optional guest name → take cash (change is shown)
+or card → **Take payment and send**. Order, items and payment are written in one transaction,
+so the kitchen never sees an unpaid counter order and a retry cannot order twice. The ticket
+reaches the stations exactly like a waiter's order, labelled *بیرون‌بر* / the table name.
+
+**Counter — takeaway handover**
+The guest waits with the order number. When the stations mark it READY it turns green in the
+cashier's *counter queue*; **Hand to guest** delivers the items and — since it is already paid
+and has no table to clear — closes the order in the same step.
+
+**Counter — guest sits down**
+A counter order with no table shows on the floor as *counter orders without a table*; any
+waiter (or the cashier) attaches a table, after which it behaves like any seated order: the
+waiter delivers it and completes it. It is already paid, so completion is never blocked.
 
 **Waiter — second round**
 Open the same table → add *Coffee × 2, Cake × 1* → Send → same order #, *Round 2* ticket.

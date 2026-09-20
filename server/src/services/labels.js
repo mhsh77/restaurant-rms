@@ -37,7 +37,20 @@ export const SETTINGS_FIELD_FA = {
   kds_warn_minutes: 'زمان هشدار',
   kds_late_minutes: 'زمان تأخیر',
   require_payment_to_complete: 'تکمیل فقط پس از تسویه',
+  mode_table_service: 'سفارش سر میز',
+  mode_counter_table: 'سفارش در پیشخوان با سرو سر میز',
+  mode_counter_pickup: 'سفارش در پیشخوان به‌صورت بیرون‌بر',
 };
+
+export const SERVICE_MODE_FA = {
+  TABLE: 'سر میز',
+  COUNTER_TABLE: 'پیشخوان، سرو سر میز',
+  COUNTER_PICKUP: 'پیشخوان، تحویل بیرون‌بر',
+};
+
+/** Where an order belongs: its table, or the counter when it has none. */
+export const placeLabel = (order) =>
+  order.table_name ?? order.tableName ?? (order.service_mode === 'COUNTER_PICKUP' || order.serviceMode === 'COUNTER_PICKUP' ? 'بیرون‌بر' : 'بدون میز');
 
 export const PAYMENT_METHOD_FA = {
   CASH: 'نقدی',

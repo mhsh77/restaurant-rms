@@ -8,6 +8,13 @@
  *  - edits carry the row version (`WHERE version = :version`) → 409 instead of overwrite;
  *  - batch submits are idempotent via clientRequestId;
  *  - one live order per table is enforced by a partial unique index.
+ *
+ * Three ordering workflows (the manager enables the ones the restaurant uses):
+ *  - TABLE          the waiter opens a table and takes the order there;
+ *  - COUNTER_TABLE  the guest orders and pays at the counter, then sits down (a table may be
+ *                   chosen at the counter or attached later) and a waiter brings the food;
+ *  - COUNTER_PICKUP the guest orders and pays at the counter and waits for it there; no table
+ *                   and no waiter — the cashier hands it over, which closes the order.
  * Notifications are emitted only after the transaction has committed.
  */
 import { q, transaction, nowIso } from '../db/connection.js';
@@ -17,12 +24,12 @@ import { audit } from './audit.js';
 import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import { containsAny, latinDigits } from '../http/validate.js';
 import { notify } from '../realtime/hub.js';
-import { getRestaurant } from './restaurant.js';
+import { getRestaurant, serviceModes } from './restaurant.js';
 import { businessDate } from './time.js';
 import { formatMoney } from './money.js';
 import { ITEM, PAYMENT, canTransition, deriveOrderStatus, derivePaymentStatus } from './statusRules.js';
 import { getTable } from './tables.js';
-import { ITEM_STATUS_FA, LIFECYCLE_FA, joinFa } from './labels.js';
+import { ITEM_STATUS_FA, LIFECYCLE_FA, SERVICE_MODE_FA, joinFa, placeLabel } from './labels.js';
 
 const ORDERING_PRESENCE_MS = 90_000;
 const OPEN_ITEM_STATUSES = [ITEM.PENDING, ITEM.PREPARING, ITEM.READY];
@@ -96,17 +103,19 @@ function moveItem(actor, item, to, now, { reason = null } = {}) {
 
 const describeItems = (items) => joinFa(items.map((i) => `${i.item_name} ×${i.quantity}`));
 
-function readyPayload(orderId, items) {
+export function readyPayload(orderId, items) {
   const o = q.get(
-    `SELECT o.id, o.order_number, o.table_id, o.waiter_id, t.name AS table_name
-       FROM orders o JOIN dining_tables t ON t.id = o.table_id WHERE o.id = ?`,
+    `SELECT o.id, o.order_number, o.table_id, o.waiter_id, o.service_mode, o.customer_name, t.name AS table_name
+       FROM orders o LEFT JOIN dining_tables t ON t.id = o.table_id WHERE o.id = ?`,
     orderId,
   );
   return {
     orderId: o.id,
     orderNumber: o.order_number,
     tableId: o.table_id,
-    tableName: o.table_name,
+    tableName: placeLabel(o),
+    serviceMode: o.service_mode,
+    customerName: o.customer_name,
     waiterId: o.waiter_id,
     count: items.length,
     items: items.map((i) => ({ id: i.id, name: i.item_name, quantity: i.quantity })),
@@ -168,7 +177,7 @@ export function getOrderDetail(actor, orderId) {
   const order = q.get(
     `SELECT o.*, t.name AS table_name, w.name AS waiter_name, ou.name AS ordering_user_name
        FROM orders o
-       JOIN dining_tables t ON t.id = o.table_id
+       LEFT JOIN dining_tables t ON t.id = o.table_id
        JOIN users w ON w.id = o.waiter_id
        LEFT JOIN users ou ON ou.id = o.ordering_user_id
       WHERE o.id = ? AND o.restaurant_id = ?`,
@@ -197,7 +206,11 @@ export function getOrderDetail(actor, orderId) {
   return {
     id: order.id,
     orderNumber: order.order_number,
-    table: { id: order.table_id, name: order.table_name },
+    table: order.table_id ? { id: order.table_id, name: order.table_name } : null,
+    place: placeLabel(order),
+    serviceMode: order.service_mode,
+    serviceModeLabel: SERVICE_MODE_FA[order.service_mode],
+    customerName: order.customer_name,
     waiter: { id: order.waiter_id, name: order.waiter_name },
     guestCount: order.guest_count,
     note: order.note,
@@ -262,7 +275,7 @@ export function searchOrders(actor, filters) {
       where.push('CAST(o.order_number AS TEXT) LIKE ?');
       params.push(`${digits}%`);
     } else {
-      const match = containsAny(['t.name', 'w.name'], text);
+      const match = containsAny(['t.name', 'w.name', 'o.customer_name'], text);
       where.push(match.sql);
       params.push(...match.params);
     }
@@ -271,16 +284,17 @@ export function searchOrders(actor, filters) {
   if (filters.waiterId) where.push('o.waiter_id = ?'), params.push(filters.waiterId);
   if (filters.status) where.push('o.status = ?'), params.push(filters.status);
   if (filters.paymentStatus) where.push('o.payment_status = ?'), params.push(filters.paymentStatus);
+  if (filters.serviceMode) where.push('o.service_mode = ?'), params.push(filters.serviceMode);
   if (filters.from) where.push('o.business_date >= ?'), params.push(filters.from);
   if (filters.to) where.push('o.business_date <= ?'), params.push(filters.to);
 
   const page = filters.page ?? 1;
   const pageSize = filters.pageSize ?? 25;
-  const base = `FROM orders o JOIN dining_tables t ON t.id = o.table_id JOIN users w ON w.id = o.waiter_id WHERE ${where.join(' AND ')}`;
+  const base = `FROM orders o LEFT JOIN dining_tables t ON t.id = o.table_id JOIN users w ON w.id = o.waiter_id WHERE ${where.join(' AND ')}`;
   const total = q.get(`SELECT COUNT(*) AS n ${base}`, ...params).n;
   const rows = q.all(
     `SELECT o.id, o.order_number, o.status, o.lifecycle, o.subtotal, o.paid_amount, o.payment_status, o.guest_count, o.business_date, o.opened_at, o.completed_at,
-            t.id AS table_id, t.name AS table_name, w.id AS waiter_id, w.name AS waiter_name,
+            t.id AS table_id, t.name AS table_name, o.service_mode, o.customer_name, w.id AS waiter_id, w.name AS waiter_name,
             (SELECT COALESCE(SUM(quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.status != 'CANCELLED') AS item_count
        ${base}
       ORDER BY o.opened_at DESC
@@ -306,7 +320,10 @@ export function searchOrders(actor, filters) {
       businessDate: r.business_date,
       openedAt: r.opened_at,
       completedAt: r.completed_at,
-      table: { id: r.table_id, name: r.table_name },
+      table: r.table_id ? { id: r.table_id, name: r.table_name } : null,
+      place: placeLabel(r),
+      serviceMode: r.service_mode,
+      customerName: r.customer_name,
       waiter: { id: r.waiter_id, name: r.waiter_name },
     })),
   };
@@ -316,10 +333,11 @@ export function searchOrders(actor, filters) {
 export function readySummary(actor) {
   const rows = q.all(
     `SELECT oi.id, oi.item_name, oi.quantity, oi.note, oi.ready_at, s.name AS station_name,
-            o.id AS order_id, o.order_number, o.waiter_id, w.name AS waiter_name, t.id AS table_id, t.name AS table_name
+            o.id AS order_id, o.order_number, o.waiter_id, o.service_mode, o.customer_name, w.name AS waiter_name,
+            t.id AS table_id, t.name AS table_name
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
-       JOIN dining_tables t ON t.id = o.table_id
+       LEFT JOIN dining_tables t ON t.id = o.table_id
        JOIN users w ON w.id = o.waiter_id
        JOIN stations s ON s.id = oi.station_id
       WHERE o.restaurant_id = ? AND o.lifecycle = 'ACTIVE' AND oi.status = 'READY'
@@ -332,7 +350,10 @@ export function readySummary(actor) {
       groups.set(r.order_id, {
         orderId: r.order_id,
         orderNumber: r.order_number,
-        table: { id: r.table_id, name: r.table_name },
+        table: r.table_id ? { id: r.table_id, name: r.table_name } : null,
+        place: placeLabel(r),
+        serviceMode: r.service_mode,
+        customerName: r.customer_name,
         waiter: { id: r.waiter_id, name: r.waiter_name },
         oldestReadyAt: r.ready_at,
         items: [],
@@ -347,6 +368,9 @@ export function readySummary(actor) {
 
 export function openOrder(actor, { tableId, guestCount, note = '' }) {
   const result = transaction(() => {
+    if (!serviceModes(getRestaurant(actor.restaurantId)).TABLE) {
+      throw conflict('سفارش‌گیری سر میز در این رستوران فعال نیست؛ سفارش در پیشخوان ثبت می‌شود');
+    }
     const table = getTable(actor, tableId);
     const existing = q.get('SELECT id, order_number FROM orders WHERE table_id = ? AND released_at IS NULL', tableId);
     if (existing) throw conflict(`${table.name} سفارش باز #${existing.order_number} دارد`, { orderId: existing.id });
@@ -401,6 +425,81 @@ export function updateOrder(actor, orderId, { guestCount, note, version }) {
   return getOrderDetail(actor, orderId);
 }
 
+/**
+ * Insert one round of items on an open order: validate the menu, create the batch, route each
+ * item to its menu item's station, and recompute the order. Caller's transaction.
+ */
+export function insertBatchInTx(actor, order, { clientRequestId, items }) {
+  const orderId = order.id;
+  const ids = [...new Set(items.map((i) => i.menuItemId))];
+  const menu = q.all(
+    `SELECT mi.id, mi.name, mi.price, mi.category_id, mi.station_id, mi.is_active, mi.is_available, mi.deleted_at,
+            s.auto_ready, s.is_active AS station_active
+       FROM menu_items mi JOIN stations s ON s.id = mi.station_id
+      WHERE mi.restaurant_id = ? AND mi.id IN (${ids.map(() => '?').join(',')})`,
+    actor.restaurantId,
+    ...ids,
+  );
+  const byId = new Map(menu.map((m) => [m.id, m]));
+  const missing = ids.filter((id) => !byId.has(id));
+  if (missing.length) throw badRequest('آیتم منو نامعتبر است', { menuItemIds: missing });
+  const unavailable = menu.filter((m) => m.deleted_at || !m.is_active || !m.is_available || !m.station_active);
+  if (unavailable.length) {
+    throw conflict(`این اقلام در حال حاضر موجود نیستند: ${joinFa(unavailable.map((m) => m.name))}`, {
+      unavailable: unavailable.map((m) => ({ menuItemId: m.id, name: m.name })),
+    });
+  }
+
+  const now = nowIso();
+  const batchNo = q.get('SELECT COALESCE(MAX(batch_no), 0) + 1 AS n FROM order_batches WHERE order_id = ?', orderId).n;
+  const batchId = Number(
+    q.run('INSERT INTO order_batches (order_id, batch_no, created_by, client_request_id, submitted_at) VALUES (?, ?, ?, ?, ?)', orderId, batchNo, actor.id, clientRequestId, now)
+      .lastInsertRowid,
+  );
+
+  const created = [];
+  for (const line of items) {
+    const m = byId.get(line.menuItemId);
+    const status = m.auto_ready ? ITEM.READY : ITEM.PENDING;
+    const itemId = Number(
+      q.run(
+        `INSERT INTO order_items (order_id, batch_id, menu_item_id, station_id, category_id, item_name, unit_price, quantity, note, status,
+                                  created_by, submitted_at, started_at, ready_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        orderId,
+        batchId,
+        m.id,
+        m.station_id,
+        m.category_id,
+        m.name,
+        m.price,
+        line.quantity,
+        line.note ?? '',
+        status,
+        actor.id,
+        now,
+        m.auto_ready ? now : null,
+        m.auto_ready ? now : null,
+        now,
+      ).lastInsertRowid,
+    );
+    q.run('INSERT INTO order_item_status_history (order_item_id, from_status, to_status, changed_by, changed_at) VALUES (?, NULL, ?, ?, ?)', itemId, status, actor.id, now);
+    created.push({ id: itemId, item_name: m.name, quantity: line.quantity, station_id: m.station_id, status });
+  }
+
+  q.run('UPDATE orders SET ordering_user_id = NULL, ordering_until = NULL WHERE id = ?', orderId);
+  recomputeOrder(orderId);
+  audit(actor, {
+    action: 'order.items_add',
+    entityType: 'order',
+    entityId: orderId,
+    summary: `${actor.name} ${describeItems(created)} را به سفارش #${order.order_number} اضافه کرد${batchNo > 1 ? ` (مرحله ${batchNo})` : ''}`,
+    metadata: { batchNo, items: created.map((c) => ({ id: c.id, name: c.item_name, quantity: c.quantity })) },
+  });
+
+  return { batchNo, created };
+}
+
 /** Submit a round of items. Routing to stations happens here, from each menu item's station. */
 export function submitBatch(actor, orderId, { clientRequestId, items }) {
   const outcome = transaction(() => {
@@ -410,71 +509,7 @@ export function submitBatch(actor, orderId, { clientRequestId, items }) {
     const duplicate = q.get('SELECT id FROM order_batches WHERE order_id = ? AND client_request_id = ?', orderId, clientRequestId);
     if (duplicate) return { duplicate: true, orderId, tableId: order.table_id, stationIds: [], readyItems: [] };
 
-    const ids = [...new Set(items.map((i) => i.menuItemId))];
-    const menu = q.all(
-      `SELECT mi.id, mi.name, mi.price, mi.category_id, mi.station_id, mi.is_active, mi.is_available, mi.deleted_at,
-              s.auto_ready, s.is_active AS station_active
-         FROM menu_items mi JOIN stations s ON s.id = mi.station_id
-        WHERE mi.restaurant_id = ? AND mi.id IN (${ids.map(() => '?').join(',')})`,
-      actor.restaurantId,
-      ...ids,
-    );
-    const byId = new Map(menu.map((m) => [m.id, m]));
-    const missing = ids.filter((id) => !byId.has(id));
-    if (missing.length) throw badRequest('آیتم منو نامعتبر است', { menuItemIds: missing });
-    const unavailable = menu.filter((m) => m.deleted_at || !m.is_active || !m.is_available || !m.station_active);
-    if (unavailable.length) {
-      throw conflict(`این اقلام در حال حاضر موجود نیستند: ${joinFa(unavailable.map((m) => m.name))}`, {
-        unavailable: unavailable.map((m) => ({ menuItemId: m.id, name: m.name })),
-      });
-    }
-
-    const now = nowIso();
-    const batchNo = q.get('SELECT COALESCE(MAX(batch_no), 0) + 1 AS n FROM order_batches WHERE order_id = ?', orderId).n;
-    const batchId = Number(
-      q.run('INSERT INTO order_batches (order_id, batch_no, created_by, client_request_id, submitted_at) VALUES (?, ?, ?, ?, ?)', orderId, batchNo, actor.id, clientRequestId, now)
-        .lastInsertRowid,
-    );
-
-    const created = [];
-    for (const line of items) {
-      const m = byId.get(line.menuItemId);
-      const status = m.auto_ready ? ITEM.READY : ITEM.PENDING;
-      const itemId = Number(
-        q.run(
-          `INSERT INTO order_items (order_id, batch_id, menu_item_id, station_id, category_id, item_name, unit_price, quantity, note, status,
-                                    created_by, submitted_at, started_at, ready_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          orderId,
-          batchId,
-          m.id,
-          m.station_id,
-          m.category_id,
-          m.name,
-          m.price,
-          line.quantity,
-          line.note ?? '',
-          status,
-          actor.id,
-          now,
-          m.auto_ready ? now : null,
-          m.auto_ready ? now : null,
-          now,
-        ).lastInsertRowid,
-      );
-      q.run('INSERT INTO order_item_status_history (order_item_id, from_status, to_status, changed_by, changed_at) VALUES (?, NULL, ?, ?, ?)', itemId, status, actor.id, now);
-      created.push({ id: itemId, item_name: m.name, quantity: line.quantity, station_id: m.station_id, status });
-    }
-
-    q.run('UPDATE orders SET ordering_user_id = NULL, ordering_until = NULL WHERE id = ?', orderId);
-    recomputeOrder(orderId);
-    audit(actor, {
-      action: 'order.items_add',
-      entityType: 'order',
-      entityId: orderId,
-      summary: `${actor.name} ${describeItems(created)} را به سفارش #${order.order_number} اضافه کرد${batchNo > 1 ? ` (مرحله ${batchNo})` : ''}`,
-      metadata: { batchNo, items: created.map((c) => ({ id: c.id, name: c.item_name, quantity: c.quantity })) },
-    });
+    const { batchNo, created } = insertBatchInTx(actor, order, { clientRequestId, items });
 
     return {
       duplicate: false,
@@ -784,7 +819,10 @@ export function getReceipt(actor, orderId) {
     order: {
       id: order.id,
       orderNumber: order.orderNumber,
-      table: order.table.name,
+      table: order.place,
+      serviceMode: order.serviceMode,
+      serviceModeLabel: order.serviceModeLabel,
+      customerName: order.customerName,
       waiter: order.waiter.name,
       guestCount: order.guestCount,
       openedAt: order.openedAt,

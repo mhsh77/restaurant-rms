@@ -19,7 +19,7 @@ const opt = (schema) => z.preprocess((v) => (v === '' ? undefined : v), schema.o
 
 /* ───────────── Tables ───────────── */
 
-router.get('/tables', requireAnyPermission(P.FLOOR_VIEW, P.TABLES_MANAGE), (req, res) => {
+router.get('/tables', requireAnyPermission(P.FLOOR_VIEW, P.TABLES_MANAGE, P.COUNTER_ORDER), (req, res) => {
   res.json(tables.listFloor(req.user));
 });
 
@@ -50,7 +50,7 @@ router.post('/tables/:id/release', requirePermission(P.ORDER_WRITE), (req, res) 
 
 const canManageMenu = (user) => roleHas(user.roleCode, P.MENU_MANAGE);
 
-router.get('/menu/categories', requireAnyPermission(P.FLOOR_VIEW, P.MENU_MANAGE), (req, res) => {
+router.get('/menu/categories', requireAnyPermission(P.FLOOR_VIEW, P.MENU_MANAGE, P.COUNTER_ORDER), (req, res) => {
   res.json(menu.listCategories(req.user, { includeInactive: canManageMenu(req.user) && req.query.all === '1' }));
 });
 
@@ -66,7 +66,7 @@ router.delete('/menu/categories/:id', requirePermission(P.MENU_MANAGE), (req, re
   res.json(menu.deleteCategory(req.user, idParam(req.params.id)));
 });
 
-router.get('/menu/items', requireAnyPermission(P.FLOOR_VIEW, P.MENU_MANAGE), (req, res) => {
+router.get('/menu/items', requireAnyPermission(P.FLOOR_VIEW, P.MENU_MANAGE, P.COUNTER_ORDER), (req, res) => {
   res.json(menu.listItems(req.user, { includeInactive: canManageMenu(req.user) && req.query.all === '1' }));
 });
 

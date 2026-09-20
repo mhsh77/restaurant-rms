@@ -48,13 +48,23 @@ export default function OrderDetail() {
 
       <div className="card detail-grid">
         <div>
-          <span className="muted">میز</span>
-          <strong>{order.table.name}</strong>
+          <span className="muted">{order.serviceMode === 'COUNTER_PICKUP' ? 'تحویل' : 'میز'}</span>
+          <strong>{order.place}</strong>
         </div>
         <div>
-          <span className="muted">گارسون</span>
+          <span className="muted">روش سفارش</span>
+          <strong>{order.serviceModeLabel}</strong>
+        </div>
+        <div>
+          <span className="muted">{order.serviceMode === 'TABLE' ? 'گارسون' : 'ثبت‌کننده'}</span>
           <strong>{order.waiter.name}</strong>
         </div>
+        {order.customerName && (
+          <div>
+            <span className="muted">مشتری</span>
+            <strong>{order.customerName}</strong>
+          </div>
+        )}
         <div>
           <span className="muted">مهمان</span>
           <strong>{faNumber(order.guestCount)} نفر</strong>

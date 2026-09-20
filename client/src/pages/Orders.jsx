@@ -4,7 +4,7 @@ import { ClipboardList, Search } from 'lucide-react';
 import { api, qs } from '../lib/api.js';
 import { PERM, useAuth } from '../lib/auth.jsx';
 import { useLiveQuery } from '../lib/hooks.js';
-import { ORDER_STATUS_LABEL, PAYMENT_STATUS_LABEL, faNumber, formatBusinessDate, formatTime, latinDigits, orderNo } from '../lib/format.js';
+import { ORDER_STATUS_LABEL, PAYMENT_STATUS_LABEL, SERVICE_MODE_SHORT, faNumber, formatBusinessDate, formatTime, latinDigits, orderNo } from '../lib/format.js';
 import { Empty, ErrorBlock, LoadingBlock, PageHeader, Pagination, StatusBadge } from '../components/ui.jsx';
 import JalaliDateInput from '../components/JalaliDateInput.jsx';
 
@@ -121,7 +121,10 @@ export default function Orders() {
                   <td className="nowrap">
                     {formatBusinessDate(o.businessDate, { day: 'numeric', month: 'long' })} <span className="muted">{formatTime(o.openedAt, restaurant?.timezone)}</span>
                   </td>
-                  <td>{o.table.name}</td>
+                  <td>
+                    {o.place}
+                    {o.serviceMode !== 'TABLE' && <span className="badge st-pending mode-badge">{SERVICE_MODE_SHORT[o.serviceMode]}</span>}
+                  </td>
                   <td>{o.waiter.name}</td>
                   <td className="num">{faNumber(o.guestCount)}</td>
                   <td className="num">{faNumber(o.itemCount)}</td>

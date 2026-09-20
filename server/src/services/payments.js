@@ -19,7 +19,58 @@ import { businessDate } from './time.js';
 import { formatMoney } from './money.js';
 import { canCompleteInTx, completeOrderInTx, getOrderDetail, recomputeOrder } from './orders.js';
 import { paymentTotals } from './reports.js';
-import { PAYMENT_METHOD_FA } from './labels.js';
+import { PAYMENT_METHOD_FA, placeLabel } from './labels.js';
+
+/**
+ * Insert one payment on an open bill and recompute the order. Caller's transaction.
+ * Shared by the cashier screen and by the counter flow, which takes the money up front.
+ */
+export function recordPaymentInTx(actor, order, input, restaurant) {
+  const orderId = order.id;
+  const money = (m) => formatMoney(restaurant, m);
+  const remaining = order.subtotal - order.paid_amount;
+  if (remaining <= 0) throw conflict(`صورتحساب سفارش #${order.order_number} قبلاً تسویه شده است`);
+  if (input.amount > remaining) {
+    throw conflict(`مبلغ پرداخت (${money(input.amount)}) بیشتر از مانده صورتحساب (${money(remaining)}) است`, { remaining });
+  }
+
+  let received = null;
+  if (input.method === 'CASH') {
+    received = input.receivedAmount ?? input.amount;
+    if (received < input.amount) throw badRequest('مبلغ دریافتی نقدی نمی‌تواند کمتر از مبلغ پرداخت باشد');
+  }
+
+  const now = new Date();
+  const paymentId = Number(
+    q.run(
+      `INSERT INTO payments (restaurant_id, order_id, method, amount, received_amount, reference, client_request_id, business_date, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      actor.restaurantId,
+      orderId,
+      input.method,
+      input.amount,
+      received,
+      input.reference ?? '',
+      input.clientRequestId,
+      businessDate(restaurant, now),
+      actor.id,
+      now.toISOString(),
+    ).lastInsertRowid,
+  );
+  recomputeOrder(orderId);
+
+  const change = received !== null ? received - input.amount : 0;
+  audit(actor, {
+    action: 'payment.create',
+    entityType: 'order',
+    entityId: orderId,
+    summary:
+      `${actor.name} مبلغ ${money(input.amount)} (${PAYMENT_METHOD_FA[input.method]}) برای سفارش #${order.order_number} دریافت کرد` +
+      (change > 0 ? ` — دریافتی ${money(received)}، باقی ${money(change)}` : ''),
+    metadata: { paymentId, method: input.method, amount: input.amount, received, reference: input.reference || undefined },
+  });
+  return { paymentId, change };
+}
 
 export function recordPayment(actor, orderId, input) {
   const outcome = transaction(() => {
@@ -31,48 +82,7 @@ export function recordPayment(actor, orderId, input) {
     if (duplicate) return { duplicate: true, orderId, tableId: order.table_id, change: 0, completed: false };
 
     const restaurant = getRestaurant(actor.restaurantId);
-    const money = (m) => formatMoney(restaurant, m);
-    const remaining = order.subtotal - order.paid_amount;
-    if (remaining <= 0) throw conflict(`صورتحساب سفارش #${order.order_number} قبلاً تسویه شده است`);
-    if (input.amount > remaining) {
-      throw conflict(`مبلغ پرداخت (${money(input.amount)}) بیشتر از مانده صورتحساب (${money(remaining)}) است`, { remaining });
-    }
-
-    let received = null;
-    if (input.method === 'CASH') {
-      received = input.receivedAmount ?? input.amount;
-      if (received < input.amount) throw badRequest('مبلغ دریافتی نقدی نمی‌تواند کمتر از مبلغ پرداخت باشد');
-    }
-
-    const now = new Date();
-    const paymentId = Number(
-      q.run(
-        `INSERT INTO payments (restaurant_id, order_id, method, amount, received_amount, reference, client_request_id, business_date, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        actor.restaurantId,
-        orderId,
-        input.method,
-        input.amount,
-        received,
-        input.reference ?? '',
-        input.clientRequestId,
-        businessDate(restaurant, now),
-        actor.id,
-        now.toISOString(),
-      ).lastInsertRowid,
-    );
-    recomputeOrder(orderId);
-
-    const change = received !== null ? received - input.amount : 0;
-    audit(actor, {
-      action: 'payment.create',
-      entityType: 'order',
-      entityId: orderId,
-      summary:
-        `${actor.name} مبلغ ${money(input.amount)} (${PAYMENT_METHOD_FA[input.method]}) برای سفارش #${order.order_number} دریافت کرد` +
-        (change > 0 ? ` — دریافتی ${money(received)}، باقی ${money(change)}` : ''),
-      metadata: { paymentId, method: input.method, amount: input.amount, received, reference: input.reference || undefined },
-    });
+    const { paymentId, change } = recordPaymentInTx(actor, order, input, restaurant);
 
     // "Pay and complete": only when this payment settled the bill and everything was served.
     let completed = false;
@@ -144,11 +154,12 @@ export function cashierOrders(actor, { view = 'due', q: search } = {}) {
 
   const rows = q.all(
     `SELECT o.id, o.order_number, o.lifecycle, o.status, o.subtotal, o.paid_amount, o.payment_status, o.guest_count, o.opened_at, o.completed_at,
+            o.service_mode, o.customer_name,
             t.id AS table_id, t.name AS table_name, w.id AS waiter_id, w.name AS waiter_name,
             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.status IN ('PENDING','PREPARING','READY')) AS open_items,
             (SELECT MAX(p.created_at) FROM payments p WHERE p.order_id = o.id AND p.voided_at IS NULL) AS last_payment_at
        FROM orders o
-       JOIN dining_tables t ON t.id = o.table_id
+       LEFT JOIN dining_tables t ON t.id = o.table_id
        JOIN users w ON w.id = o.waiter_id
       WHERE ${where.join(' AND ')}
       ORDER BY ${view === 'due' ? "(o.lifecycle = 'COMPLETED') DESC, (open_items = 0) DESC, o.opened_at" : 'last_payment_at DESC'}
@@ -169,7 +180,10 @@ export function cashierOrders(actor, { view = 'due', q: search } = {}) {
     openedAt: r.opened_at,
     completedAt: r.completed_at,
     lastPaymentAt: r.last_payment_at,
-    table: { id: r.table_id, name: r.table_name },
+    table: r.table_id ? { id: r.table_id, name: r.table_name } : null,
+    place: placeLabel(r),
+    serviceMode: r.service_mode,
+    customerName: r.customer_name,
     waiter: { id: r.waiter_id, name: r.waiter_name },
   }));
 }

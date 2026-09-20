@@ -103,6 +103,15 @@ export const TABLE_STATUS_LABEL = {
 
 export const ROLE_LABEL = { MANAGER: 'مدیر', WAITER: 'گارسون', KITCHEN: 'آشپزخانه', BAR: 'بار', CASHIER: 'صندوقدار' };
 
+export const SERVICE_MODE_LABEL = {
+  TABLE: 'سر میز',
+  COUNTER_TABLE: 'پیشخوان، سرو سر میز',
+  COUNTER_PICKUP: 'بیرون‌بر',
+};
+
+/** Short badge text; a plain table order needs no badge at all. */
+export const SERVICE_MODE_SHORT = { TABLE: '', COUNTER_TABLE: 'پیشخوان', COUNTER_PICKUP: 'بیرون‌بر' };
+
 export const PAYMENT_METHOD_LABEL = { CASH: 'نقدی', CARD: 'کارت‌خوان', OTHER: 'سایر' };
 
 export const PAYMENT_STATUS_LABEL = {

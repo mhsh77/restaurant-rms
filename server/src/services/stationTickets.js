@@ -1,5 +1,6 @@
 import { q, nowIso } from '../db/connection.js';
 import { worksStation } from '../auth/session.js';
+import { SERVICE_MODE_FA, placeLabel } from './labels.js';
 import { notFound } from '../http/errors.js';
 import { toStationDto } from './stations.js';
 
@@ -19,11 +20,11 @@ export function getStationTickets(actor, stationId) {
             oi.submitted_at, oi.started_at, oi.ready_at, oi.cancel_reason,
             b.batch_no, b.submitted_at AS batch_submitted_at,
             o.id AS order_id, o.order_number, o.guest_count, o.note AS order_note,
-            t.name AS table_name, w.name AS waiter_name
+            o.service_mode, o.customer_name, t.name AS table_name, w.name AS waiter_name
        FROM order_items oi
        JOIN order_batches b ON b.id = oi.batch_id
        JOIN orders o ON o.id = oi.order_id
-       JOIN dining_tables t ON t.id = o.table_id
+       LEFT JOIN dining_tables t ON t.id = o.table_id
        JOIN users w ON w.id = o.waiter_id
       WHERE oi.station_id = ?
         AND o.restaurant_id = ?
@@ -45,7 +46,10 @@ export function getStationTickets(actor, stationId) {
         batchNo: r.batch_no,
         orderId: r.order_id,
         orderNumber: r.order_number,
-        tableName: r.table_name,
+        tableName: placeLabel(r),
+        serviceMode: r.service_mode,
+        serviceModeLabel: SERVICE_MODE_FA[r.service_mode],
+        customerName: r.customer_name,
         waiterName: r.waiter_name,
         guestCount: r.guest_count,
         orderNote: r.order_note,

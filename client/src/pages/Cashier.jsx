@@ -4,10 +4,12 @@ import { api, newRequestId, qs } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { useAction, useLiveQuery } from '../lib/hooks.js';
 import { useToast } from '../lib/toast.jsx';
-import { PAYMENT_METHOD_LABEL, faNumber, formatBusinessDate, formatTime, latinDigits, minorToInput, orderNo, parseMoney } from '../lib/format.js';
+import { PAYMENT_METHOD_LABEL, SERVICE_MODE_SHORT, faNumber, formatBusinessDate, formatTime, latinDigits, minorToInput, orderNo, parseMoney } from '../lib/format.js';
 import { ConfirmDialog, Empty, ErrorBlock, Field, LoadingBlock, PageHeader, StatusBadge, Stepper } from '../components/ui.jsx';
 import { StatTile } from '../components/charts.jsx';
 import PaymentList, { METHOD_ICON } from '../components/PaymentList.jsx';
+import CounterOrder from '../components/CounterOrder.jsx';
+import CounterQueue from '../components/CounterQueue.jsx';
 import ReceiptPreview from '../components/ReceiptPreview.jsx';
 
 /**
@@ -15,7 +17,10 @@ import ReceiptPreview from '../components/ReceiptPreview.jsx';
  * card terminal, other; split between guests), voiding mistakes, and today's takings.
  */
 export default function Cashier() {
-  const { money } = useAuth();
+  const { money, restaurant } = useAuth();
+  const modes = restaurant?.serviceModes ?? { tableService: true, counterTable: false, counterPickup: false };
+  const counterOn = modes.counterTable || modes.counterPickup;
+  const [tab, setTab] = useState('bills'); // bills | new | queue
   const [view, setView] = useState('due');
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -52,6 +57,27 @@ export default function Cashier() {
     <div className="page">
       <PageHeader title="صندوق" subtitle={s ? `روز کاری ${formatBusinessDate(s.businessDate, { weekday: 'long', day: 'numeric', month: 'long' })}` : ' '} />
 
+      {counterOn && (
+        <div className="segmented segmented-page" role="tablist" aria-label="بخش‌های صندوق">
+          <button type="button" role="tab" aria-selected={tab === 'bills'} className={tab === 'bills' ? 'is-active' : ''} onClick={() => setTab('bills')}>
+            صورتحساب‌ها
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'new'} className={tab === 'new' ? 'is-active' : ''} onClick={() => setTab('new')}>
+            سفارش جدید در پیشخوان
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'queue'} className={tab === 'queue' ? 'is-active' : ''} onClick={() => setTab('queue')}>
+            صف پیشخوان
+          </button>
+        </div>
+      )}
+
+      {counterOn && tab === 'new' && <CounterOrder modes={modes} onDone={() => { listQ.reload(); summaryQ.reload(); }} />}
+      {counterOn && tab === 'queue' && (
+        <div className="card">
+          <CounterQueue />
+        </div>
+      )}
+
       {s && (
         <div className="stats">
           <StatTile hero label="دریافتی امروز" value={money(s.collected)} sub={`${faNumber(s.paidOrders)} سفارش · ${faNumber(s.paymentCount)} پرداخت`} />
@@ -77,7 +103,7 @@ export default function Cashier() {
         </div>
       )}
 
-      <div className="cashier" data-selected={selectedId ? 'true' : 'false'}>
+      <div className="cashier" data-selected={selectedId ? 'true' : 'false'} hidden={counterOn && tab !== 'bills'}>
         <aside className="cashier-list card" aria-label="صورتحساب‌ها">
           <div className="segmented" role="tablist">
             <button type="button" role="tab" aria-selected={view === 'due'} className={view === 'due' ? 'is-active' : ''} onClick={() => setView('due')}>
@@ -126,7 +152,8 @@ function BillRow({ bill, active, onSelect }) {
   return (
     <button type="button" className={`bill-row ${active ? 'is-active' : ''}`} onClick={onSelect} aria-pressed={active}>
       <span className="bill-row-top">
-        <b>{bill.table.name}</b>
+        <b>{bill.place}</b>
+        {bill.serviceMode !== 'TABLE' && <span className="badge st-pending mode-badge">{SERVICE_MODE_SHORT[bill.serviceMode]}</span>}
         <StatusBadge kind="payment" status={bill.paymentStatus} />
       </span>
       <span className="muted small">
@@ -178,7 +205,7 @@ function BillPanel({ order, onBack, onChanged }) {
         </button>
         <div className="bill-title">
           <h2>
-            {order.table.name} · سفارش {orderNo(order.orderNumber)}
+            {order.place} · سفارش {orderNo(order.orderNumber)}
           </h2>
           <span className="muted">
             {order.waiter.name} · {faNumber(order.guestCount)} مهمان · ثبت {formatTime(order.openedAt, tz)}

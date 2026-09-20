@@ -18,8 +18,16 @@ export default function SettingsPage() {
   const q = useLiveQuery(() => api.get('/restaurant'), [], { events: ['settings:changed'], intervalMs: 0 });
   const [form, setForm] = useState(null);
 
+  // the API reads the workflows back as a nested object and takes them as flat flags
   useEffect(() => {
-    if (q.data) setForm(q.data);
+    if (!q.data) return;
+    const { serviceModes, ...rest } = q.data;
+    setForm({
+      ...rest,
+      modeTableService: serviceModes.tableService,
+      modeCounterTable: serviceModes.counterTable,
+      modeCounterPickup: serviceModes.counterPickup,
+    });
   }, [q.data]);
 
   if (q.loading && !q.data) return <LoadingBlock />;
@@ -33,7 +41,13 @@ export default function SettingsPage() {
     const { id, ...body } = form;
     return run(async () => {
       const saved = await api.put('/restaurant', body);
-      setForm(saved);
+      const { serviceModes, ...rest } = saved;
+      setForm({
+        ...rest,
+        modeTableService: serviceModes.tableService,
+        modeCounterTable: serviceModes.counterTable,
+        modeCounterPickup: serviceModes.counterPickup,
+      });
       await refresh();
     }, { success: 'تنظیمات ذخیره شد' });
   };
@@ -101,6 +115,34 @@ export default function SettingsPage() {
             ))}
           </select>
         </Field>
+
+        <h2 className="span-all">روش‌های سفارش‌گیری</h2>
+        <div className="span-all mode-options">
+          <div>
+            <Toggle
+              checked={!!form.modeTableService}
+              onChange={(v) => setForm({ ...form, modeTableService: v })}
+              label="سفارش سر میز (گارسون)"
+            />
+            <p className="field-hint">مهمان می‌نشیند، گارسون سفارش را می‌گیرد و در پایان صورتحساب پرداخت می‌شود.</p>
+          </div>
+          <div>
+            <Toggle
+              checked={!!form.modeCounterTable}
+              onChange={(v) => setForm({ ...form, modeCounterTable: v })}
+              label="سفارش در پیشخوان، سرو سر میز"
+            />
+            <p className="field-hint">مهمان در صندوق سفارش می‌دهد و همان‌جا پول را می‌پردازد، بعد می‌نشیند و گارسون غذا را سر میز می‌برد. صندوقدار می‌تواند میز را همان لحظه انتخاب کند یا بعداً به سفارش وصل شود.</p>
+          </div>
+          <div>
+            <Toggle
+              checked={!!form.modeCounterPickup}
+              onChange={(v) => setForm({ ...form, modeCounterPickup: v })}
+              label="سفارش در پیشخوان، تحویل بیرون‌بر"
+            />
+            <p className="field-hint">مهمان در صندوق سفارش می‌دهد و پول را می‌پردازد، منتظر می‌ماند و سفارش را از پیشخوان تحویل می‌گیرد. این روش میز و گارسون ندارد.</p>
+          </div>
+        </div>
 
         <h2 className="span-all">نمایشگر آشپزخانه و بار</h2>
         <Field label="هشدار پس از (دقیقه)" hint="رنگ فیش نارنجی می‌شود">

@@ -27,6 +27,11 @@ export function toSettings(r) {
     kdsWarnMinutes: r.kds_warn_minutes,
     kdsLateMinutes: r.kds_late_minutes,
     requirePaymentToComplete: !!r.require_payment_to_complete,
+    serviceModes: {
+      tableService: !!r.mode_table_service,
+      counterTable: !!r.mode_counter_table,
+      counterPickup: !!r.mode_counter_pickup,
+    },
   };
 }
 
@@ -44,7 +49,19 @@ const COLUMNS = {
   kdsWarnMinutes: 'kds_warn_minutes',
   kdsLateMinutes: 'kds_late_minutes',
   requirePaymentToComplete: 'require_payment_to_complete',
+  modeTableService: 'mode_table_service',
+  modeCounterTable: 'mode_counter_table',
+  modeCounterPickup: 'mode_counter_pickup',
 };
+
+/** The workflows in use, as flags the services can read. */
+export function serviceModes(restaurant) {
+  return {
+    TABLE: !!restaurant.mode_table_service,
+    COUNTER_TABLE: !!restaurant.mode_counter_table,
+    COUNTER_PICKUP: !!restaurant.mode_counter_pickup,
+  };
+}
 
 export function updateSettings(actor, input) {
   const result = transaction(() => {
@@ -58,6 +75,20 @@ export function updateSettings(actor, input) {
       const factor = 10 ** (input.currencyDecimals - current.currency_decimals);
       q.run('UPDATE menu_items SET price = CAST(ROUND(price * ?) AS INTEGER) WHERE restaurant_id = ?', factor, actor.restaurantId);
     }
+    const modes = {
+      mode_table_service: input.modeTableService ?? !!current.mode_table_service,
+      mode_counter_table: input.modeCounterTable ?? !!current.mode_counter_table,
+      mode_counter_pickup: input.modeCounterPickup ?? !!current.mode_counter_pickup,
+    };
+    if (!Object.values(modes).some(Boolean)) throw badRequest('دست‌کم یکی از روش‌های سفارش‌گیری باید فعال باشد');
+    if (!modes.mode_table_service) {
+      const seated = q.get(
+        "SELECT COUNT(*) AS n FROM orders WHERE restaurant_id = ? AND lifecycle = 'ACTIVE' AND service_mode = 'TABLE'",
+        actor.restaurantId,
+      ).n;
+      if (seated) throw conflict(`${seated} سفارش باز سر میز وجود دارد؛ ابتدا آن‌ها را ببندید و بعد این روش را خاموش کنید`);
+    }
+
     const warn = input.kdsWarnMinutes ?? current.kds_warn_minutes;
     const late = input.kdsLateMinutes ?? current.kds_late_minutes;
     if (late <= warn) throw badRequest('زمان «تأخیر» باید بیشتر از زمان «هشدار» باشد');

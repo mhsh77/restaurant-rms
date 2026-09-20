@@ -69,10 +69,10 @@ export default function ReadyBell() {
                 className="bell-group-main"
                 onClick={() => {
                   setOpen(false);
-                  navigate(`/tables/${g.table.id}`);
+                  navigate(g.table ? `/tables/${g.table.id}` : `/orders/${g.orderId}`);
                 }}
               >
-                <span className="bell-table">{g.table.name}</span>
+                <span className="bell-table">{g.place}</span>
                 <span className="muted">
                   {orderNo(g.orderNumber)} · {g.waiter.id === user.id ? 'میز شما' : g.waiter.name} · در انتظار {formatElapsed(now - new Date(g.oldestReadyAt).getTime())}
                 </span>

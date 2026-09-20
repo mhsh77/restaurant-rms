@@ -156,6 +156,8 @@ export function seedDemo({ timezone = DEFAULT_TIMEZONE } = {}) {
     CATEGORIES.forEach((c, idx) =>
       q.run('INSERT INTO menu_categories (restaurant_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', rid, c, idx + 1, now, now),
     );
+    // the demo restaurant offers all three ordering workflows
+    q.run('UPDATE restaurants SET mode_table_service = 1, mode_counter_table = 1, mode_counter_pickup = 1 WHERE id = ?', rid);
     const categoryId = (n) => q.get('SELECT id FROM menu_categories WHERE name = ?', n).id;
     const stationId = (code) => q.get('SELECT id FROM stations WHERE code = ?', code).id;
     MENU.forEach(([cat, itemName, price, station, type, , , description], idx) => {
@@ -265,7 +267,11 @@ export function seedHistory({ days = 30 } = {}) {
 
   transaction(() => {
     for (const { opened, busy } of plans) {
-      const table = tables.find((t) => (tableFreeAt.get(t.id) ?? 0) <= opened) ?? pick(tables);
+      // a quarter of the business is ordered and paid at the counter: half of those guests
+      // sit down (a waiter brings it), half wait and take it away
+      const roll = rng();
+      const serviceMode = roll < 0.13 ? 'COUNTER_PICKUP' : roll < 0.25 ? 'COUNTER_TABLE' : 'TABLE';
+      const table = serviceMode === 'COUNTER_PICKUP' ? null : tables.find((t) => (tableFreeAt.get(t.id) ?? 0) <= opened) ?? pick(tables);
       const waiter = pick(waiters);
       const guests = Math.max(1, Math.min(8, Math.round(between(1, 5))));
       const cancelledOrder = rng() < 0.03;
@@ -273,12 +279,13 @@ export function seedHistory({ days = 30 } = {}) {
 
       const orderId = Number(
         q.run(
-          `INSERT INTO orders (restaurant_id, order_number, table_id, waiter_id, guest_count, lifecycle, status, business_date, opened_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'OPEN', ?, ?, ?)`,
+          `INSERT INTO orders (restaurant_id, order_number, table_id, waiter_id, service_mode, guest_count, lifecycle, status, business_date, opened_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', 'OPEN', ?, ?, ?)`,
           restaurant.id,
           orderNumber,
-          table.id,
+          table ? table.id : null,
           waiter.id,
+          serviceMode,
           guests,
           businessDate(restaurant, new Date(opened)),
           iso(opened),
@@ -378,7 +385,7 @@ export function seedHistory({ days = 30 } = {}) {
           iso(at),
           orderId,
         );
-        tableFreeAt.set(table.id, at);
+        if (table) tableFreeAt.set(table.id, at);
       } else {
         const completed = lastDelivered + between(15, 45) * MIN;
         // Settled at the register a few minutes before the order was closed: mostly card,
@@ -421,7 +428,7 @@ export function seedHistory({ days = 30 } = {}) {
           iso(completed),
           orderId,
         );
-        tableFreeAt.set(table.id, completed + 5 * MIN);
+        if (table) tableFreeAt.set(table.id, completed + 5 * MIN);
       }
     }
     q.run('UPDATE restaurants SET order_seq = ? WHERE id = ?', orderNumber, restaurant.id);

@@ -62,6 +62,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export const PERM = {
   FLOOR_VIEW: 'floor:view',
+  COUNTER_ORDER: 'order:counter',
   ORDER_WRITE: 'order:write',
   ORDER_VIEW: 'order:view',
   STATION_WORK: 'station:work',

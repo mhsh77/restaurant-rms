@@ -6,6 +6,7 @@ import { PERM, useAuth } from '../lib/auth.jsx';
 import { useLiveQuery, useNow } from '../lib/hooks.js';
 import { PAYMENT_STATUS_LABEL, TABLE_STATUS_LABEL, faDigits, faNumber, formatElapsed, orderNo } from '../lib/format.js';
 import { ErrorBlock, LoadingBlock, PageHeader, Empty } from '../components/ui.jsx';
+import CounterQueue from '../components/CounterQueue.jsx';
 
 const STATUS_ORDER = ['READY', 'PREPARING', 'ORDERING', 'WAITING_FOR_ORDER', 'OCCUPIED', 'COMPLETED', 'AVAILABLE'];
 
@@ -45,6 +46,8 @@ export default function Floor() {
           )
         }
       />
+
+      {can(PERM.ORDER_WRITE) && <CounterQueue only="needs-table" />}
 
       <div className="filter-bar">
         <div className="chips" role="group" aria-label="فیلتر وضعیت">
