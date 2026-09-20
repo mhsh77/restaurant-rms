@@ -13,6 +13,7 @@ Recording payments at the cashier (cash, card terminal, split bills) is included
 payment gateways, card-terminal integration and formal accounting are **out of scope** by design.
 
 - Architecture, database schema, API and user flows: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Narrated training videos (Persian), one per role: [latest release](../../releases/latest)
 
 ---
 
@@ -165,6 +166,25 @@ When serving behind nginx, proxy WebSocket upgrades for `/socket.io/`.
   then shows *Completed* until someone releases it after clearing.
 
 ---
+
+## Training videos
+
+Six narrated walkthroughs in Persian — a simple road map of one order end to end, plus one
+detailed video per role — are attached to the [latest release](../../releases/latest):
+
+| Video | Length |
+|---|---|
+| ۱ — نقشه راه: مسیر یک سفارش | 3:13 |
+| ۲ — گارسون (waiter) | 5:15 |
+| ۳ — آشپزخانه (kitchen) | 4:02 |
+| ۴ — بار (bar) | 2:16 |
+| ۵ — صندوقدار (cashier) | 4:29 |
+| ۶ — مدیر (manager) | 4:31 |
+
+They are recorded from the real app, not mocked: `video/capture.mjs` starts its own server on a
+throwaway database, drives every role in its own browser session, and saves lossless frames;
+`video/assemble.mjs` fits each scene to its own voice clip, so a slower or faster narrator never
+drifts out of sync. The narration scripts live in `video/narration/`. See [video/README.md](video/README.md).
 
 ## Tests
 
